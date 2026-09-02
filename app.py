@@ -1,32 +1,26 @@
 import streamlit as st
 from sentence_transformers import SentenceTransformer, util
-import spacy
+import yake
 
 # ============================================
 # SETUP (runs once, cached so it doesn't reload every time you interact)
 # ============================================
 
 @st.cache_resource
-def load_models():
-    embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-    nlp_model = spacy.load("en_core_web_sm")
-    return embedding_model, nlp_model
+def load_embedding_model():
+    return SentenceTransformer('all-MiniLM-L6-v2')
 
-model, nlp = load_models()
+model = load_embedding_model()
+kw_extractor = yake.KeywordExtractor(lan="en", n=3, top=40, dedupLim=0.9)
 
 # ============================================
-# HELPER FUNCTIONS (same logic you already tested in Colab)
+# HELPER FUNCTIONS
 # ============================================
 
 def extract_key_terms(text):
-    """Pull out likely skill/tool phrases from text using noun chunks."""
-    doc = nlp(text)
-    terms = set()
-    for chunk in doc.noun_chunks:
-        cleaned = chunk.text.strip().lower()
-        if 1 <= len(cleaned.split()) <= 3 and len(cleaned) > 2:
-            terms.add(cleaned)
-    return terms
+    """Pull out likely skill/keyword phrases from text using YAKE."""
+    keywords = kw_extractor.extract_keywords(text)
+    return {kw.lower().strip() for kw, score in keywords}
 
 def is_real_skill_term(term):
     noise_starters = {"a", "the", "this", "that", "these", "those"}
@@ -74,15 +68,12 @@ if st.button("Analyze Match", type="primary"):
         st.warning("Please paste text into both boxes first.")
     else:
         with st.spinner("Analyzing..."):
-            # Semantic match score
             embedding_resume = model.encode(resume_text, convert_to_tensor=True)
             embedding_jd = model.encode(job_description, convert_to_tensor=True)
             match_score = util.cos_sim(embedding_resume, embedding_jd).item()
 
-            # Skill gap
             missing_skills = get_missing_skills(resume_text, job_description)
 
-        # Display match score
         st.subheader("Match Score")
         score_percent = match_score * 100
         st.metric(label="Semantic Match", value=f"{score_percent:.1f}%")
@@ -95,7 +86,6 @@ if st.button("Analyze Match", type="primary"):
         else:
             st.warning("Low semantic match — this role may need different framing or you may want to target other roles.")
 
-        # Display skill gaps
         st.subheader("Skills/Terms in the JD Not Found in Your Resume")
         if missing_skills:
             for term in missing_skills:
@@ -103,4 +93,4 @@ if st.button("Analyze Match", type="primary"):
         else:
             st.write("No major gaps found — good coverage!")
 
-st.caption("Built with Sentence-BERT (all-MiniLM-L6-v2) for semantic embeddings and spaCy for keyword extraction.")
+st.caption("Built with Sentence-BERT (all-MiniLM-L6-v2) for semantic embeddings and YAKE for keyword extraction.")
